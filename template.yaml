@@ -54,7 +54,7 @@ Resources:
   CanaryFunction:
     Type: AWS::Synthetics::Canary
     Properties:
-      Name: S3EndpointCanary
+      Name: S3EndpointCanary-1
       ArtifactS3Location: !Sub s3://${S3BucketName}/canary-artifacts/
       ExecutionRoleArn: !GetAtt CanaryRole.Arn
       RuntimeVersion: syn-nodejs-puppeteer-3.9
