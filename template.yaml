@@ -6,7 +6,7 @@ Resources:
   CanaryArtifactsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'canary-artifacts-${AWS::AccountId}'
+      BucketName: !Join ['-', [!Ref 'AWS::StackName', 'canary-artifacts', !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]]]
 
   CanaryRole:
     Type: AWS::IAM::Role
@@ -55,8 +55,7 @@ Resources:
     Type: AWS::Synthetics::Canary
     Properties:
       Name: s3-canary
-      ArtifactS3Location: 
-        Fn::Sub: '${CanaryArtifactsBucket}/canary/'
+      ArtifactS3Location: !Join ['/', [!Ref CanaryArtifactsBucket, 'canary']]
       ExecutionRoleArn: !GetAtt CanaryRole.Arn
       RuntimeVersion: syn-nodejs-puppeteer-3.9
       Schedule:
