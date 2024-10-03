@@ -2,12 +2,12 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Deploy CloudWatch Synthetic Canaries for S3 endpoint monitoring across regions
 
-Parameters:
-  S3BucketName:
-    Type: String
-    Description: Name of the S3 bucket to store canary artifacts
-
 Resources:
+  CanaryArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'canary-artifacts-${AWS::AccountId}'
+
   CanaryRole:
     Type: AWS::IAM::Role
     Properties:
@@ -33,8 +33,8 @@ Resources:
                   - s3:PutObject
                   - s3:GetBucketLocation
                 Resource:
-                  - !Sub arn:aws:s3:::${S3BucketName}
-                  - !Sub arn:aws:s3:::${S3BucketName}/*
+                  - !GetAtt CanaryArtifactsBucket.Arn
+                  - !Sub ${CanaryArtifactsBucket.Arn}/*
               - Effect: Allow
                 Action:
                   - s3:ListAllMyBuckets
@@ -54,15 +54,15 @@ Resources:
   CanaryFunction:
     Type: AWS::Synthetics::Canary
     Properties:
-      Name: S3Canary
-      ArtifactS3Location: !Sub s3://${S3BucketName}/canary-artifacts/
+      Name: s3-canary
+      ArtifactS3Location: !Sub '${CanaryArtifactsBucket.Arn}/'
       ExecutionRoleArn: !GetAtt CanaryRole.Arn
       RuntimeVersion: syn-nodejs-puppeteer-3.9
       Schedule:
         Expression: rate(1 minute)
       StartCanaryAfterCreation: true
       RunConfig:
-        TimeoutInSeconds: 300
+        TimeoutInSeconds: 60
         EnvironmentVariables:
           S3_ENDPOINTS: "s3.us-east-1.amazonaws.com,s3.us-west-2.amazonaws.com,s3.eu-west-1.amazonaws.com,s3.ap-southeast-1.amazonaws.com"
       Code:
@@ -103,6 +103,7 @@ Resources:
           exports.handler = async () => {
             return await pageLoadBlueprint();
           };
+    DependsOn: CanaryArtifactsBucket
 
   CloudWatchDashboard:
     Type: AWS::CloudWatch::Dashboard
@@ -155,3 +156,6 @@ Outputs:
   DashboardName:
     Description: Name of the created CloudWatch Dashboard
     Value: !Ref CloudWatchDashboard
+  CanaryArtifactsBucketName:
+    Description: Name of the S3 bucket for storing Canary artifacts
+    Value: !Ref CanaryArtifactsBucket
