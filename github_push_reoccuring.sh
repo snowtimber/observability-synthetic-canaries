@@ -1,6 +1,5 @@
 #!/bin/bash
-# usage: 
-# chmod +x github_push_reoccuring.sh
+# usage:  (only need to run this script once)
 # ./github_push_reoccuring.sh "Your commit message"
 
 # GitHub repository details

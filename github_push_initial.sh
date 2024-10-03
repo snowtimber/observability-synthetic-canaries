@@ -1,6 +1,6 @@
 #!/bin/bash
 # usage: 
-# chmod +x github_push.sh
+# chmod +x github_push.sh (only need to run this script once)
 # ./github_push_initial.sh
 
 # GitHub repository details
