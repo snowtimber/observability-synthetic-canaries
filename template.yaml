@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Deploy CloudWatch Synthetic Canaries for S3 endpoint monitoring across regions
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: Name of the S3 bucket to store canary artifacts
+
+Resources:
+  CanaryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - synthetics.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchFullAccess
+      Policies:
+        - PolicyName: SyntheticsS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub arn:aws:s3:::${S3BucketName}
+                  - !Sub arn:aws:s3:::${S3BucketName}/*
+              - Effect: Allow
+                Action:
+                  - s3:ListAllMyBuckets
+                Resource: '*'
+        - PolicyName: SyntheticsCloudWatchAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  CanaryFunction:
+    Type: AWS::Synthetics::Canary
+    Properties:
+      Name: S3EndpointCanary
+      ArtifactS3Location: !Sub s3://${S3BucketName}/canary-artifacts/
+      ExecutionRoleArn: !GetAtt CanaryRole.Arn
+      RuntimeVersion: syn-nodejs-puppeteer-3.9
+      Schedule:
+        Expression: rate(1 minute)
+      StartCanaryAfterCreation: true
+      RunConfig:
+        TimeoutInSeconds: 300
+        EnvironmentVariables:
+          S3_ENDPOINTS: "s3.us-east-1.amazonaws.com,s3.us-west-2.amazonaws.com,s3.eu-west-1.amazonaws.com,s3.ap-southeast-1.amazonaws.com"
+      Code:
+        Handler: index.handler
+        Script: |
+          const synthetics = require('Synthetics');
+          const log = require('SyntheticsLogger');
+          const https = require('https');
+
+          const checkS3Endpoint = async (endpoint) => {
+            return new Promise((resolve, reject) => {
+              const startTime = Date.now();
+              https.get(`https://${endpoint}`, (res) => {
+                const endTime = Date.now();
+                const latency = endTime - startTime;
+                log.info(`S3 endpoint ${endpoint} latency: ${latency}ms`);
+                resolve({ endpoint, status: res.statusCode, latency });
+              }).on('error', (e) => {
+                reject(new Error(`Error accessing ${endpoint}: ${e.message}`));
+              });
+            });
+          };
+
+          const pageLoadBlueprint = async function () {
+            const endpoints = process.env.S3_ENDPOINTS.split(',');
+            const results = await Promise.all(endpoints.map(checkS3Endpoint));
+            
+            results.forEach(result => {
+              const success = result.status === 200;
+              synthetics.addExecutionResult(success, `S3 endpoint check for ${result.endpoint}`, 'S3Check', {
+                endpoint: result.endpoint,
+                latency: result.latency,
+                statusCode: result.status
+              });
+            });
+          };
+
+          exports.handler = async () => {
+            return await pageLoadBlueprint();
+          };
+
+  CloudWatchDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: S3EndpointMonitoringDashboard
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ { "expression": "SEARCH('{AWS/Synthetics,CanaryName} MetricName=\"Duration\"', 'Average', 60)", "label": "S3 Endpoint Latency", "id": "e1" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "S3 Endpoint Latency",
+                "period": 60
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ { "expression": "SEARCH('{AWS/Synthetics,CanaryName} MetricName=\"SuccessPercent\"', 'Average', 60)", "label": "S3 Endpoint Availability", "id": "e2" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "S3 Endpoint Availability",
+                "period": 60
+              }
+            }
+          ]
+        }
+
+Outputs:
+  CanaryName:
+    Description: Name of the created Canary
+    Value: !Ref CanaryFunction
+  DashboardName:
+    Description: Name of the created CloudWatch Dashboard
+    Value: !Ref CloudWatchDashboard
