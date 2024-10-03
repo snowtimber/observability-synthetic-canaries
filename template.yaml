@@ -57,7 +57,7 @@ Resources:
       Name: s3-canary
       ArtifactS3Location: !Join ['', ['s3://', !Ref CanaryArtifactsBucket, '/canary/']]
       ExecutionRoleArn: !GetAtt CanaryRole.Arn
-      RuntimeVersion: syn-nodejs-puppeteer-3.9
+      RuntimeVersion: syn-nodejs-puppeteer-latest
       Schedule:
         Expression: rate(1 minute)
       StartCanaryAfterCreation: true
