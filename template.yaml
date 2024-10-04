@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Deploy CloudWatch Synthetic Canaries for S3 endpoint monitoring across regions
+Description: Deploy CloudWatch Synthetic Canaries for monitoring
 
 Resources:
   CanaryArtifactsBucket:
@@ -51,64 +51,152 @@ Resources:
                   - logs:PutLogEvents
                 Resource: '*'
 
-  CanaryFunction:
+  HeartbeatCanary:
     Type: AWS::Synthetics::Canary
     Properties:
-      Name: s3-canary
-      ArtifactS3Location: !Join ['', ['s3://', !Ref CanaryArtifactsBucket, '/canary/']]
+      Name: heartbeat-canary
+      ArtifactS3Location: !Join ['', ['s3://', !Ref CanaryArtifactsBucket, '/heartbeat-canary/']]
       ExecutionRoleArn: !GetAtt CanaryRole.Arn
-      RuntimeVersion: syn-nodejs-puppeteer-latest
+      RuntimeVersion: syn-nodejs-puppeteer-9.0
+      Schedule:
+        Expression: rate(1 minute)
+      StartCanaryAfterCreation: true
+      RunConfig:
+        TimeoutInSeconds: 60
+      Code:
+        Handler: index.handler
+        Script: |
+          const synthetics = require('Synthetics');
+          const log = require('SyntheticsLogger');
+          const syntheticsConfiguration = synthetics.getConfiguration();
+
+          const loadBlueprint = async function () {
+              const url = 'https://amazon.com';
+              const takeScreenshot = true;
+
+              syntheticsConfiguration.disableStepScreenshots();
+              syntheticsConfiguration.setConfig({
+                 continueOnStepFailure: true,
+                 includeRequestHeaders: true,
+                 includeResponseHeaders: true,
+                 restrictedHeaders: [],
+                 restrictedUrlParameters: []
+              });
+
+              let page = await synthetics.getPage();
+              await loadUrl(page, url, takeScreenshot);
+          };
+
+          const loadUrl = async function (page, url, takeScreenshot) {
+              let stepName = null;
+              let domcontentloaded = false;
+
+              try {
+                  stepName = new URL(url).hostname;
+              } catch (e) {
+                  const errorString = `Error parsing url: ${url}. ${e}`;
+                  log.error(errorString);
+                  throw e;
+              }
+
+              await synthetics.executeStep(stepName, async function () {
+                  const response = await page.goto(url, { waitUntil: ['domcontentloaded'], timeout: 30000});
+                  if (response) {
+                      domcontentloaded = true;
+                      const status = response.status();
+                      const statusText = response.statusText();
+
+                      if (response.status() < 200 || response.status() > 299) {
+                          throw new Error(`Failed to load url: ${url} ${response.status()} ${response.statusText()}`);
+                      }
+                  } else {
+                      const logNoResponseString = `No response returned for url: ${url}`;
+                      log.error(logNoResponseString);
+                      throw new Error(logNoResponseString);
+                  }
+              });
+
+              if (domcontentloaded && takeScreenshot) {
+                  await new Promise(r => setTimeout(r, 15000));
+                  await synthetics.takeScreenshot(stepName, 'loaded');
+              }
+          };
+
+          exports.handler = async () => {
+              return await loadBlueprint();
+          };
+    DependsOn: CanaryArtifactsBucket
+
+  APICanary:
+    Type: AWS::Synthetics::Canary
+    Properties:
+      Name: api-canary
+      ArtifactS3Location: !Join ['', ['s3://', !Ref CanaryArtifactsBucket, '/api-canary/']]
+      ExecutionRoleArn: !GetAtt CanaryRole.Arn
+      RuntimeVersion: syn-nodejs-puppeteer-9.0
       Schedule:
         Expression: rate(1 minute)
       StartCanaryAfterCreation: true
       RunConfig:
         TimeoutInSeconds: 60
         EnvironmentVariables:
-          S3_ENDPOINTS: "s3.us-east-1.amazonaws.com,s3.us-west-2.amazonaws.com,s3.eu-west-1.amazonaws.com,s3.ap-southeast-1.amazonaws.com"
+          S3_ENDPOINTS: "https://s3.us-east-1.amazonaws.com,https://s3.us-west-2.amazonaws.com,https://s3.eu-west-1.amazonaws.com,https://s3.ap-southeast-1.amazonaws.com"
       Code:
         Handler: index.handler
         Script: |
           const synthetics = require('Synthetics');
           const log = require('SyntheticsLogger');
-          const https = require('https');
+          const syntheticsConfiguration = synthetics.getConfiguration();
 
-          const checkS3Endpoint = async (endpoint) => {
-            return new Promise((resolve, reject) => {
-              const startTime = Date.now();
-              https.get(`https://${endpoint}`, (res) => {
-                const endTime = Date.now();
-                const latency = endTime - startTime;
-                log.info(`S3 endpoint ${endpoint} latency: ${latency}ms`);
-                resolve({ endpoint, status: res.statusCode, latency });
-              }).on('error', (e) => {
-                reject(new Error(`Error accessing ${endpoint}: ${e.message}`));
-              });
-            });
-          };
+          const apiCanaryBlueprint = async function () {
+              const urls = process.env.S3_ENDPOINTS.split(',').map(endpoint => `https://${endpoint}`);
 
-          const pageLoadBlueprint = async function () {
-            const endpoints = process.env.S3_ENDPOINTS.split(',');
-            const results = await Promise.all(endpoints.map(checkS3Endpoint));
-            
-            results.forEach(result => {
-              const success = result.status === 200;
-              synthetics.addExecutionResult(success, `S3 endpoint check for ${result.endpoint}`, 'S3Check', {
-                endpoint: result.endpoint,
-                latency: result.latency,
-                statusCode: result.status
+              syntheticsConfiguration.setConfig({
+                  restrictedHeaders: [],
+                  restrictedUrlParameters: []
               });
-            });
+
+              const validateSuccessful = async function(res) {
+                  return new Promise((resolve, reject) => {
+                      if (res.statusCode < 200 || res.statusCode > 299) {
+                          throw new Error(res.statusCode + ' ' + res.statusMessage);
+                      }
+
+                      let responseBody = '';
+                      res.on('data', (d) => {
+                          responseBody += d;
+                      });
+
+                      res.on('end', () => {
+                          resolve();
+                      });
+                  });
+              };
+
+              for (const url of urls) {
+                  const stepName = new URL(url).hostname;
+                  await synthetics.executeStep(stepName, async function () {
+                      const response = await synthetics.makeRequest(url, {
+                          method: 'GET',
+                          headers: {
+                              'User-Agent': synthetics.getDefaultUserAgentString(),
+                          },
+                      });
+
+                      await validateSuccessful(response);
+                  });
+              }
           };
 
           exports.handler = async () => {
-            return await pageLoadBlueprint();
+              return await apiCanaryBlueprint();
           };
     DependsOn: CanaryArtifactsBucket
 
   CloudWatchDashboard:
     Type: AWS::CloudWatch::Dashboard
     Properties:
-      DashboardName: S3EndpointMonitoringDashboard
+      DashboardName: MonitoringDashboard
       DashboardBody: !Sub |
         {
           "widgets": [
@@ -116,16 +204,33 @@ Resources:
               "type": "metric",
               "x": 0,
               "y": 0,
-              "width": 24,
+              "width": 12,
               "height": 6,
               "properties": {
                 "metrics": [
-                  [ { "expression": "SEARCH('{AWS/Synthetics,CanaryName} MetricName=\"Duration\"', 'Average', 60)", "label": "S3 Endpoint Latency", "id": "e1" } ]
+                  [ { "expression": "SEARCH('{AWS/Synthetics,CanaryName} MetricName=\"Duration\" CanaryName=\"heartbeat-canary\"', 'Average', 60)", "label": "Heartbeat Latency", "id": "e1" } ]
                 ],
                 "view": "timeSeries",
                 "stacked": false,
                 "region": "${AWS::Region}",
-                "title": "S3 Endpoint Latency",
+                "title": "Heartbeat Latency",
+                "period": 60
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ { "expression": "SEARCH('{AWS/Synthetics,CanaryName} MetricName=\"SuccessPercent\" CanaryName=\"heartbeat-canary\"', 'Average', 60)", "label": "Heartbeat Availability", "id": "e2" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Heartbeat Availability",
                 "period": 60
               }
             },
@@ -133,16 +238,33 @@ Resources:
               "type": "metric",
               "x": 0,
               "y": 6,
-              "width": 24,
+              "width": 12,
               "height": 6,
               "properties": {
                 "metrics": [
-                  [ { "expression": "SEARCH('{AWS/Synthetics,CanaryName} MetricName=\"SuccessPercent\"', 'Average', 60)", "label": "S3 Endpoint Availability", "id": "e2" } ]
+                  [ { "expression": "SEARCH('{AWS/Synthetics,CanaryName} MetricName=\"Duration\" CanaryName=\"api-canary\"', 'Average', 60)", "label": "API Latency", "id": "e3" } ]
                 ],
                 "view": "timeSeries",
                 "stacked": false,
                 "region": "${AWS::Region}",
-                "title": "S3 Endpoint Availability",
+                "title": "API Latency",
+                "period": 60
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ { "expression": "SEARCH('{AWS/Synthetics,CanaryName} MetricName=\"SuccessPercent\" CanaryName=\"api-canary\"', 'Average', 60)", "label": "API Availability", "id": "e4" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Availability",
                 "period": 60
               }
             }
@@ -150,11 +272,14 @@ Resources:
         }
 
 Outputs:
-  CanaryName:
-    Description: Name of the created Canary
-    Value: !Ref CanaryFunction
+  HeartbeatCanaryName:
+    Description: Name of the Heartbeat Canary
+    Value: !Ref HeartbeatCanary
+  APICanaryName:
+    Description: Name of the API Canary
+    Value: !Ref APICanary
   DashboardName:
-    Description: Name of the created CloudWatch Dashboard
+    Description: Name of the CloudWatch Dashboard
     Value: !Ref CloudWatchDashboard
   CanaryArtifactsBucketName:
     Description: Name of the S3 bucket for storing Canary artifacts
