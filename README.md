@@ -69,17 +69,30 @@ stack_name: observability-synthetic-canaries
 
 ### Option 1: Deploy using AWS SAM CLI
 
-Run the deployment script:
+1. Run the deployment script:
 
-```
-chmod +x deploy.sh
-./deploy.sh
-```
+   ```
+   chmod +x deploy.sh
+   ./deploy.sh
+   ```
 
-This script will:
-- Validate the SAM template
-- Deploy the stack using AWS SAM CLI with the necessary IAM capabilities
-- Provide post-deployment instructions and useful links
+   This script will:
+   - Validate the SAM template
+   - Deploy the stack using AWS SAM CLI with the necessary IAM capabilities
+   - Provide post-deployment instructions and useful links
+
+2. If you prefer to run the SAM deploy command manually, use:
+
+   ```
+   sam deploy \\
+       --template-file template.yaml \\
+       --stack-name observability-synthetic-canaries \\
+       --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \\
+       --region <your-region> \\
+       --guided
+   ```
+
+   Replace `<your-region>` with your desired AWS region.
 
 ### Option 2: Deploy using AWS Console
 
@@ -165,7 +178,7 @@ The dashboard provides visual metrics for both canaries, including:
 4. If deployment fails, check the CloudFormation events in the AWS Console for error messages
 5. If you encounter a \"permission denied\" error when running the scripts, ensure you've set the execute permissions using `chmod +x script_name.sh`
 6. If the generated CloudFormation template is empty or incomplete, make sure your SAM template (`template.yaml`) is valid and contains all necessary resources
-7. If you encounter an error about missing IAM capabilities, make sure you've checked the acknowledgment box in the AWS Console, or if using the SAM CLI, ensure the `--capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM` flags are included in the deployment command
+7. If you encounter an error about missing IAM capabilities (e.g., \"Requires capabilities : [CAPABILITY_IAM]\"), make sure you're using the updated `deploy.sh` script or including the `--capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM` flags in your SAM deploy command
 
 ## Contributing
 
