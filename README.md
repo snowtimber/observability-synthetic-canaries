@@ -15,44 +15,48 @@ This project deploys the following AWS resources:
 
 ## Prerequisites
 
-- AWS CLI installed and configured
-- AWS SAM CLI installed
-- GitHub CLI (gh) installed and authenticated (for initial setup)
+- AWS account with appropriate permissions
+- AWS CLI
+- AWS SAM CLI
 - Node.js 12.x or later
-
-## Project Structure
-
-- `template.yaml`: SAM template defining AWS resources
-- `deploy.sh`: Script to deploy the CloudFormation stack
-- `github_push_initial.sh`: Script for initial GitHub repository setup
-- `github_push_reoccuring.sh`: Script for subsequent GitHub pushes
-- `README.md`: This file, containing project documentation
 
 ## Setup and Deployment
 
-1. Clone this repository:
-   ```
-   git clone https://github.com/snowtimber/observability-synthetic-canaries.git
-   cd observability-synthetic-canaries
-   ```
+### 1. Install and Configure AWS CLI
 
-2. (Optional) If this is a new project, run the initial GitHub push script:
-   ```
-   chmod +x github_push_initial.sh
-   ./github_push_initial.sh
-   ```
+If you haven't already installed the AWS CLI, follow these steps:
 
-3. Deploy the CloudFormation stack:
-   ```
-   chmod +x deploy.sh
-   ./deploy.sh
-   ```
+a. Install the AWS CLI by following the official AWS documentation for your operating system:
+   https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html
 
-4. For subsequent updates, use the recurring GitHub push script:
+b. Configure the AWS CLI with your credentials:
    ```
-   chmod +x github_push_reoccuring.sh
-   ./github_push_reoccuring.sh \"Your commit message\"
+   aws configure
    ```
+   You'll be prompted to enter your AWS Access Key ID, Secret Access Key, default region, and output format.
+
+### 2. Install AWS SAM CLI
+
+If you haven't installed the AWS SAM CLI, follow the official AWS documentation:
+https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html
+
+### 3. Clone the Repository
+
+```
+git clone https://github.com/snowtimber/observability-synthetic-canaries.git
+cd observability-synthetic-canaries
+```
+
+### 4. Deploy the Stack
+
+Run the deployment script:
+
+```
+chmod +x deploy.sh
+./deploy.sh
+```
+
+This script will use the AWS SAM CLI to deploy the CloudFormation stack defined in `template.yaml`.
 
 ## Resource Details
 
@@ -78,13 +82,6 @@ The dashboard provides visual metrics for both canaries, including:
 - API Latency
 - API Availability
 
-### IAM Roles and Policies
-
-The template creates an IAM role with permissions for the canaries to:
-- Write artifacts to the S3 bucket
-- Perform API calls to S3 endpoints
-- Write logs and metrics to CloudWatch
-
 ## Customization
 
 - Modify the `S3_ENDPOINTS` environment variable in the `template.yaml` file to monitor different S3 endpoints
@@ -97,6 +94,7 @@ If you encounter issues:
 1. Check the CloudWatch Logs for each canary
 2. Verify that the IAM roles have the correct permissions
 3. Ensure that the S3 bucket names are globally unique
+4. If deployment fails, check the CloudFormation events in the AWS Console for error messages
 
 ## Contributing
 
