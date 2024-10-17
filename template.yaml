@@ -32,9 +32,11 @@ Resources:
                 Action:
                   - s3:PutObject
                   - s3:GetBucketLocation
+                  - s3:HeadBucket
                 Resource:
                   - !GetAtt CanaryArtifactsBucket.Arn
                   - !Sub ${CanaryArtifactsBucket.Arn}/*
+                  - arn:aws:s3:::0-arxiv-data
               - Effect: Allow
                 Action:
                   - s3:ListAllMyBuckets
@@ -139,53 +141,44 @@ Resources:
       StartCanaryAfterCreation: true
       RunConfig:
         TimeoutInSeconds: 60
-        EnvironmentVariables:
-          S3_ENDPOINTS: "https://s3.us-east-1.amazonaws.com,https://s3.us-west-2.amazonaws.com,https://s3.eu-west-1.amazonaws.com,https://s3.ap-southeast-1.amazonaws.com"
       Code:
         Handler: index.handler
         Script: |
           const synthetics = require('Synthetics');
           const log = require('SyntheticsLogger');
-          const syntheticsConfiguration = synthetics.getConfiguration();
+          const https = require('https');
 
           const apiCanaryBlueprint = async function () {
-              const urls = process.env.S3_ENDPOINTS.split(',').map(endpoint => `https://${endpoint}`);
-
-              syntheticsConfiguration.setConfig({
-                  restrictedHeaders: [],
-                  restrictedUrlParameters: []
-              });
+              const bucketName = '0-arxiv-data';
+              const region = 'us-east-1';
+              const url = `https://${bucketName}.s3.${region}.amazonaws.com`;
 
               const validateSuccessful = async function(res) {
                   return new Promise((resolve, reject) => {
                       if (res.statusCode < 200 || res.statusCode > 299) {
-                          throw new Error(res.statusCode + ' ' + res.statusMessage);
-                      }
-
-                      let responseBody = '';
-                      res.on('data', (d) => {
-                          responseBody += d;
-                      });
-
-                      res.on('end', () => {
+                          reject(new Error(res.statusCode + ' ' + res.statusMessage));
+                      } else {
                           resolve();
-                      });
+                      }
                   });
               };
 
-              for (const url of urls) {
-                  const stepName = new URL(url).hostname;
-                  await synthetics.executeStep(stepName, async function () {
-                      const response = await synthetics.makeRequest(url, {
-                          method: 'GET',
-                          headers: {
-                              'User-Agent': synthetics.getDefaultUserAgentString(),
-                          },
+              await synthetics.executeStep('S3 HEAD Request', async function () {
+                  const response = await new Promise((resolve, reject) => {
+                      const req = https.request(url, { method: 'HEAD' }, (res) => {
+                          resolve(res);
                       });
 
-                      await validateSuccessful(response);
+                      req.on('error', (error) => {
+                          reject(error);
+                      });
+
+                      req.end();
                   });
-              }
+
+                  await validateSuccessful(response);
+                  log.info('S3 bucket HEAD request successful');
+              });
           };
 
           exports.handler = async () => {
