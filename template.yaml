@@ -36,7 +36,8 @@ Resources:
                 Resource:
                   - !GetAtt CanaryArtifactsBucket.Arn
                   - !Sub ${CanaryArtifactsBucket.Arn}/*
-                  - arn:aws:s3:::0-arxiv-data
+                  - arn:aws:s3:::sentinel-s2-l1c
+                  - arn:aws:s3:::usgs-landsat/collection02/
               - Effect: Allow
                 Action:
                   - s3:ListAllMyBuckets
@@ -151,7 +152,7 @@ Resources:
           const apiCanaryBlueprint = async function () {
               const urls = [
                   'https://sentinel-s2-l1c.s3.eu-central-1.amazonaws.com',
-                  'https://usgs-landsat.s3.us-west-2.amazonaws.com'
+                  'https://usgs-landsat.s3.us-west-2.amazonaws.com/collection02/'
               ];
 
               const validateSuccessful = async function(res) {
