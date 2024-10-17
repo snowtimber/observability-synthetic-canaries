@@ -151,7 +151,7 @@ Resources:
           const apiCanaryBlueprint = async function () {
               const urls = [
                   'https://sentinel-s2-l1c.s3.eu-central-1.amazonaws.com',
-                  'https://usgs-landsat.s3.us-west-2.amazonaws.com/usgs-landsat/collection02/'
+                  'https://usgs-landsat.s3.us-west-2.amazonaws.com'
               ];
 
               const validateSuccessful = async function(res) {
