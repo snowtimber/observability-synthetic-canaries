@@ -136,9 +136,13 @@ If you prefer to deploy the stack directly through the AWS Console, follow these
 
 #### API Canary
 
-- Performs GET requests to multiple S3 endpoints (configurable via environment variable)
-- Validates successful responses
+- Performs HEAD requests to the following open data S3 endpoints:
+  - `https://sentinel-s2-l1c.s3.eu-central-1.amazonaws.com`
+  - `https://sentinel-inventory.s3.eu-central-1.amazonaws.com/sentinel-s2-l1c`
+- Validates successful responses (status code between 200-299)
 - Reports on availability and latency of each endpoint
+
+The API Canary checks the availability of an open data set hosted on S3 buckets in the `eu-central-1` region. The data set contains Level 1C scenes and metadata for the Sentinel-2 satellite mission.
 
 ### CloudWatch Dashboard
 
