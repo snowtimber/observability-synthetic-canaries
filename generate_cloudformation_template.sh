@@ -6,6 +6,8 @@
 # chmod +x generate_cloudformation_template.sh
 # ./generate_cloudformation_template.sh
 
+#!/bin/bash
+
 # Load configuration
 REGION=$(grep 'region:' config.yaml | awk '{print $2}')
 STACK_NAME=$(grep 'stack_name:' config.yaml | awk '{print $2}')
@@ -25,7 +27,8 @@ if [ $? -eq 0 ]; then
 
     if [ $? -eq 0 ]; then
         echo "CloudFormation template generated successfully: $CF_TEMPLATE"
-        echo "You can now use this template to deploy directly from the AWS Console."
+        echo "Execute the following command to deploy the packaged template:"
+        echo "sam deploy --template-file $CF_TEMPLATE --stack-name $STACK_NAME --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM --region $REGION --guided"
     else
         echo "Failed to package the CloudFormation template. Check the error message above."
         exit 1
