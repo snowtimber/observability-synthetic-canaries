@@ -1,0 +1,5 @@
+# (optional) update these with your own parameters
+
+# config.yaml
+region: us-east-1
+stack_name: observability-synthetic-canaries

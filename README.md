@@ -56,6 +56,15 @@ git clone https://github.com/snowtimber/observability-synthetic-canaries.git
 cd observability-synthetic-canaries
 ```
 
+### 6. Configure the Project
+
+Edit the `config.yaml` file to set your desired AWS region and stack name:
+
+```yaml
+region: us-east-1
+stack_name: observability-synthetic-canaries
+```
+
 ## Deployment Options
 
 ### Option 1: Deploy using AWS SAM CLI
@@ -68,45 +77,39 @@ chmod +x deploy.sh
 ```
 
 This script will:
-- Validate the CloudFormation template
-- Deploy the stack using AWS CloudFormation
+- Validate the SAM template
+- Deploy the stack using AWS SAM CLI with the necessary IAM capabilities
 - Provide post-deployment instructions and useful links
 
 ### Option 2: Deploy using AWS Console
 
 If you prefer to deploy the stack directly through the AWS Console, follow these steps:
 
-1. Ensure you have the AWS SAM CLI installed (see Setup step 4 above).
-
-2. Set the execute permission for the script:
+1. Generate the CloudFormation template:
 
    ```
    chmod +x generate_cloudformation_template.sh
-   ```
-
-3. Run the script to generate a CloudFormation template locally:
-
-   ```
    ./generate_cloudformation_template.sh
    ```
 
    This will create a file named `cloudformation_template.yaml` in your current directory.
 
-4. Log in to the AWS Management Console and navigate to the CloudFormation service.
+2. Log in to the AWS Management Console and navigate to the CloudFormation service.
 
-5. Click \"Create stack\" and choose \"With new resources (standard)\".
+3. Click \"Create stack\" and choose \"With new resources (standard)\".
 
-6. In the \"Specify template\" section, choose \"Upload a template file\".
+4. In the \"Specify template\" section, choose \"Upload a template file\".
 
-7. Click \"Choose file\" and select the `cloudformation_template.yaml` file you generated.
+5. Click \"Choose file\" and select the `cloudformation_template.yaml` file you generated.
 
-8. Click \"Next\" and follow the prompts to create the stack:
-   - Enter a stack name
+6. Click \"Next\" and follow the prompts to create the stack:
+   - Enter the stack name from your `config.yaml` file
    - Review the parameters (if any)
    - Configure stack options as needed
+   - On the \"Review\" page, make sure to check the box that says \"I acknowledge that AWS CloudFormation might create IAM resources.\"
    - Review and create the stack
 
-9. Wait for the stack creation to complete. You can monitor the progress in the CloudFormation console.
+7. Wait for the stack creation to complete. You can monitor the progress in the CloudFormation console.
 
 ## Resource Details
 
@@ -150,8 +153,9 @@ The dashboard provides visual metrics for both canaries, including:
 
 4. To delete the stack, run:
    ```
-   aws cloudformation delete-stack --stack-name observability-synthetic-canaries --region [YOUR-REGION]
+   aws cloudformation delete-stack --stack-name [YOUR-STACK-NAME] --region [YOUR-REGION]
    ```
+   Replace [YOUR-STACK-NAME] and [YOUR-REGION] with the values from your `config.yaml` file.
 
 ## Troubleshooting
 
@@ -159,8 +163,9 @@ The dashboard provides visual metrics for both canaries, including:
 2. Verify that the IAM roles have the correct permissions
 3. Ensure that the S3 bucket names are globally unique
 4. If deployment fails, check the CloudFormation events in the AWS Console for error messages
-5. If you encounter a \"permission denied\" error when running the script, ensure you've set the execute permission using the `chmod +x generate_cloudformation_template.sh` command
+5. If you encounter a \"permission denied\" error when running the scripts, ensure you've set the execute permissions using `chmod +x script_name.sh`
 6. If the generated CloudFormation template is empty or incomplete, make sure your SAM template (`template.yaml`) is valid and contains all necessary resources
+7. If you encounter an error about missing IAM capabilities, make sure you've checked the acknowledgment box in the AWS Console, or if using the SAM CLI, ensure the `--capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM` flags are included in the deployment command
 
 ## Contributing
 
