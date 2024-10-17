@@ -56,7 +56,9 @@ git clone https://github.com/snowtimber/observability-synthetic-canaries.git
 cd observability-synthetic-canaries
 ```
 
-### 6. Deploy the Stack
+## Deployment Options
+
+### Option 1: Deploy using AWS SAM CLI
 
 Run the deployment script:
 
@@ -69,6 +71,42 @@ This script will:
 - Validate the CloudFormation template
 - Deploy the stack using AWS CloudFormation
 - Provide post-deployment instructions and useful links
+
+### Option 2: Deploy using AWS Console
+
+If you prefer to deploy the stack directly through the AWS Console, follow these steps:
+
+1. Ensure you have the AWS SAM CLI installed (see Setup step 4 above).
+
+2. Set the execute permission for the script:
+
+   ```
+   chmod +x generate_cloudformation_template.sh
+   ```
+
+3. Run the script to generate a CloudFormation template locally:
+
+   ```
+   ./generate_cloudformation_template.sh
+   ```
+
+   This will create a file named `cloudformation_template.yaml` in your current directory.
+
+4. Log in to the AWS Management Console and navigate to the CloudFormation service.
+
+5. Click \"Create stack\" and choose \"With new resources (standard)\".
+
+6. In the \"Specify template\" section, choose \"Upload a template file\".
+
+7. Click \"Choose file\" and select the `cloudformation_template.yaml` file you generated.
+
+8. Click \"Next\" and follow the prompts to create the stack:
+   - Enter a stack name
+   - Review the parameters (if any)
+   - Configure stack options as needed
+   - Review and create the stack
+
+9. Wait for the stack creation to complete. You can monitor the progress in the CloudFormation console.
 
 ## Resource Details
 
@@ -108,7 +146,7 @@ The dashboard provides visual metrics for both canaries, including:
 2. Check the CloudWatch Dashboard for canary metrics:
    https://[YOUR-REGION].console.aws.amazon.com/cloudwatch/home?region=[YOUR-REGION]#dashboards:
 
-3. To make changes, edit the template.yaml file and re-run the deploy.sh script.
+3. To make changes, edit the template.yaml file and re-run the deployment process.
 
 4. To delete the stack, run:
    ```
@@ -117,11 +155,12 @@ The dashboard provides visual metrics for both canaries, including:
 
 ## Troubleshooting
 
-If you encounter issues:
 1. Check the CloudWatch Logs for each canary
 2. Verify that the IAM roles have the correct permissions
 3. Ensure that the S3 bucket names are globally unique
 4. If deployment fails, check the CloudFormation events in the AWS Console for error messages
+5. If you encounter a \"permission denied\" error when running the script, ensure you've set the execute permission using the `chmod +x generate_cloudformation_template.sh` command
+6. If the generated CloudFormation template is empty or incomplete, make sure your SAM template (`template.yaml`) is valid and contains all necessary resources
 
 ## Contributing
 

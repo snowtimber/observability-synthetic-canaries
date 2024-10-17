@@ -2,6 +2,10 @@
 
 # Generate CloudFormation template from SAM template locally
 
+# usage: 
+# chmod +x generate_cloudformation_template.sh
+# ./generate_cloudformation_template.sh
+
 SAM_TEMPLATE="template.yaml"
 CF_TEMPLATE="cloudformation_template.yaml"
 
@@ -12,8 +16,7 @@ sam build --template-file $SAM_TEMPLATE
 if [ $? -eq 0 ]; then
     sam package \
         --template-file .aws-sam/build/template.yaml \
-        --output-template-file $CF_TEMPLATE \
-        --use-json
+        --output-template-file $CF_TEMPLATE
 
     if [ $? -eq 0 ]; then
         echo "CloudFormation template generated successfully: $CF_TEMPLATE"
