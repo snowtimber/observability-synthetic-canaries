@@ -265,6 +265,23 @@ Resources:
                 "title": "API Availability",
                 "period": 60
               }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                  "view": "timeSeries",
+                  "stacked": false,
+                  "metrics": [
+                      [ "CloudWatchSynthetics", "SuccessPercent", "CanaryName", "api-canary" ],
+                      [ "...", "heartbeat-canary" ]
+                  ],
+                  "region": "us-east-1",
+                  "title": "SuccessPercent"
+              }
             }
           ]
         }
