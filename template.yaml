@@ -154,58 +154,53 @@ Resources:
           const log = require('SyntheticsLogger');
 
           const apiCanaryBlueprint = async function () {
-              const postData = JSON.stringify({ test: 'data' });
-              const apiUrl = process.env.API_ENDPOINT;
+            const postData = JSON.stringify({ test: 'data' });
+            const apiUrl = process.env.API_ENDPOINT;
 
-              log.info(`Base API URL: ${apiUrl}`);
+            log.info(`API URL: ${apiUrl}`);
 
-              const url = new URL(apiUrl);
-              url.pathname = url.pathname + '/test';
-              log.info(`Full API URL: ${url.toString()}`);
-
-              const requestOptions = {
-                  hostname: url.hostname,
-                  port: 443,
-                  protocol: url.protocol,
-                  path: url.pathname,
-                  method: 'POST',
-                  headers: {
-                      'Content-Type': 'application/json',
-                      'Content-Length': Buffer.byteLength(postData)
-                  }
-              };
-
-              log.info(`Request options: ${JSON.stringify(requestOptions)}`);
-
-              try {
-                  log.info('Starting API POST Test');
-                  const { response } = await synthetics.executeHttpStep('API POST Test', requestOptions, postData);
-                  
-                  log.info(`Response status: ${response.statusCode}`);
-                  log.info(`Response headers: ${JSON.stringify(response.headers)}`);
-                  log.info(`Response body: ${response.body}`);
-
-                  if (response.statusCode < 200 || response.statusCode > 299) {
-                      throw new Error(`Request failed with status ${response.statusCode}`);
-                  }
-
-                  log.info('API POST request successful');
-              } catch (error) {
-                  log.error(`API POST Test failed: ${error.message}`);
-                  log.error(`Error stack: ${error.stack}`);
-                  throw error;
+            const requestOptions = {
+              hostname: new URL(apiUrl).hostname,
+              port: 443,
+              protocol: 'https:',
+              method: 'POST',
+              path: '/Prod/test',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
               }
+            };
+
+            const stepConfig = {
+              includeRequestHeaders: true,
+              includeResponseHeaders: true,
+              includeRequestBody: true,
+              includeResponseBody: true
+            };
+
+            const validatePositiveCase = async function(res) {
+              return new Promise((resolve, reject) => {
+                if (res.statusCode < 200 || res.statusCode > 299) {
+                  throw `${res.statusCode} ${res.statusMessage}`;
+                }
+
+                let responseBody = '';
+                res.on('data', (d) => {
+                  responseBody += d;
+                });
+
+                res.on('end', () => {
+                  log.info(`Response body: ${responseBody}`);
+                  resolve();
+                });
+              });
+            };
+
+            await synthetics.executeHttpStep('API POST Test', requestOptions, validatePositiveCase, stepConfig, postData);
           };
 
           exports.handler = async () => {
-              try {
-                  log.info('Starting canary execution');
-                  await apiCanaryBlueprint();
-                  log.info('Canary execution completed successfully');
-              } catch (error) {
-                  log.error(`Canary execution failed: ${error.message}`);
-                  throw error;
-              }
+            return await apiCanaryBlueprint();
           };
     DependsOn: SimpleAPI
 
