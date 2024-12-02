@@ -394,7 +394,7 @@ Resources:
               verify_request(method1, url1, postData1, headers1)
 
               url2 = 'https://b5e624so9a.execute-api.us-east-1.amazonaws.com/Prod/test'
-              method2 = 'GET'
+              method2 = 'POST'
               postData2 = ""
               headers2 = {"Content-Type":"application/json"}
 
