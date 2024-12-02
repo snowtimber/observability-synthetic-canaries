@@ -32,14 +32,14 @@ Resources:
                 Action:
                   - s3:PutObject
                   - s3:GetBucketLocation
-                  - s3:ListAllMyBuckets  # Add this line
+                  - s3:ListAllMyBuckets
                 Resource:
                   - !GetAtt CanaryArtifactsBucket.Arn
                   - !Sub ${CanaryArtifactsBucket.Arn}/*
               - Effect: Allow
                 Action:
                   - s3:ListAllMyBuckets
-                Resource: '*'  # Add this statement
+                Resource: '*'
         - PolicyName: SyntheticsCloudWatchAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -51,6 +51,14 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: '*'
+        - PolicyName: APIGatewayInvokeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - execute-api:Invoke
+                Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SimpleAPI}/*/*/*"
 
   HeartbeatCanary:
     Type: AWS::Synthetics::Canary
@@ -147,15 +155,18 @@ Resources:
 
           const apiCanaryBlueprint = async function () {
               const postData = JSON.stringify({ test: 'data' });
-              const apiUrl = process.env.API_ENDPOINT + '/test';
+              const apiUrl = process.env.API_ENDPOINT;
 
-              log.info(`API URL: ${apiUrl}`);
+              log.info(`Base API URL: ${apiUrl}`);
+
+              const url = new URL('/test', apiUrl);
+              log.info(`Full API URL: ${url.toString()}`);
 
               const requestOptions = {
-                  hostname: new URL(apiUrl).hostname,
+                  hostname: url.hostname,
                   port: 443,
-                  protocol: 'https:',
-                  path: new URL(apiUrl).pathname,
+                  protocol: url.protocol,
+                  path: url.pathname,
                   method: 'POST',
                   headers: {
                       'Content-Type': 'application/json',
@@ -167,11 +178,8 @@ Resources:
 
               try {
                   log.info('Starting API POST Test');
-                  const startTime = Date.now();
                   const { response } = await synthetics.executeHttpStep('API POST Test', requestOptions, postData);
-                  const endTime = Date.now();
                   
-                  log.info(`Request duration: ${endTime - startTime}ms`);
                   log.info(`Response status: ${response.statusCode}`);
                   log.info(`Response headers: ${JSON.stringify(response.headers)}`);
                   log.info(`Response body: ${response.body}`);
@@ -220,7 +228,7 @@ Resources:
                             [ "CloudWatchSynthetics", "SuccessPercent", "CanaryName", "api-canary" ],
                             [ "...", "heartbeat-canary" ]
                         ],
-                        "region": "us-east-1",
+                        "region": "${AWS::Region}",
                         "title": "SuccessPercent"
                     }
                 },
@@ -242,7 +250,7 @@ Resources:
                             [ ".", "Failed requests" ],
                             [ ".", "SuccessPercent" ]
                         ],
-                        "region": "us-east-1"
+                        "region": "${AWS::Region}"
                     }
                 },
                 {
@@ -260,7 +268,7 @@ Resources:
                             [ ".", "SuccessPercent", ".", "heartbeat-canary", ".", "amazon.com" ],
                             [ ".", "Duration", ".", ".", ".", "." ]
                         ],
-                        "region": "us-east-1"
+                        "region": "${AWS::Region}"
                     }
                 }
             ]
