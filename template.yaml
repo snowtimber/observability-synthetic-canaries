@@ -294,4 +294,4 @@ Outputs:
   SampleCurlCommand:
     Description: Sample curl command to invoke the API endpoint
     Value: !Sub |
-      curl -X POST -H "Content-Type: application/json" -d '{"test": "data"}' ${APIEndpoint}/test
+      curl -X POST -H "Content-Type: application/json" -d '{"test": "data"}' $https://${SimpleAPI}.execute-api.${AWS::Region}.amazonaws.com/Prod/test
