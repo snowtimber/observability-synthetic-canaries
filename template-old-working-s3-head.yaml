@@ -58,7 +58,7 @@ Resources:
       Name: heartbeat-canary
       ArtifactS3Location: !Join ['', ['s3://', !Ref CanaryArtifactsBucket, '/heartbeat-canary/']]
       ExecutionRoleArn: !GetAtt CanaryRole.Arn
-      RuntimeVersion: syn-nodejs-puppeteer-7.0
+      RuntimeVersion: syn-nodejs-puppeteer-9.0
       Schedule:
         Expression: rate(1 minute)
       StartCanaryAfterCreation: true
@@ -131,7 +131,7 @@ Resources:
       Name: api-canary
       ArtifactS3Location: !Join ['', ['s3://', !Ref CanaryArtifactsBucket, '/api-canary/']]
       ExecutionRoleArn: !GetAtt CanaryRole.Arn
-      RuntimeVersion: syn-nodejs-puppeteer-7.0
+      RuntimeVersion: syn-nodejs-puppeteer-9.0
       Schedule:
         Expression: rate(1 minute)
       StartCanaryAfterCreation: true
