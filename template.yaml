@@ -385,12 +385,20 @@ Resources:
 
 
           def main():
-              url = os.environ['API_ENDPOINT']
-              method = 'POST'
-              postData = json.dumps({"test": "data"})
-              headers = {"Content-Type": "application/json"}
 
-              verify_request(method, url, postData, headers)
+              url1 = 'https://b5e624so9a.execute-api.us-east-1.amazonaws.com/Prod/test'
+              method1 = 'POST'
+              postData1 = "{\"test\": \"data\"}"
+              headers1 = {"Content-Type":"application/json"}
+
+              verify_request(method1, url1, postData1, headers1)
+
+              url2 = 'https://b5e624so9a.execute-api.us-east-1.amazonaws.com/Prod/test'
+              method2 = 'GET'
+              postData2 = ""
+              headers2 = {"Content-Type":"application/json"}
+
+              verify_request(method2, url2, None, headers2)
 
               logger.info("Canary successfully executed.")
 
