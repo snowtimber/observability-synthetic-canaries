@@ -75,30 +75,107 @@ Resources:
       Code:
         Handler: index.handler
         Script: |
+          const { URL } = require('url');
           const synthetics = require('Synthetics');
           const log = require('SyntheticsLogger');
+          const syntheticsConfiguration = synthetics.getConfiguration();
+          const syntheticsLogHelper = require('SyntheticsLogHelper');
 
-          const pageLoadBlueprint = async function () {
-              const url = 'https://amazon.com';
+          const loadBlueprint = async function () {
+
+              const urls = ['https://amazon.com','https://google.com'];
+
+              // Set screenshot option
+              const takeScreenshot = true;
+
+              /* Disabling default step screen shots taken during Synthetics.executeStep() calls
+              * Step will be used to publish metrics on time taken to load dom content but
+              * Screenshots will be taken outside the executeStep to allow for page to completely load with domcontentloaded
+              * You can change it to load, networkidle0, networkidle2 depending on what works best for you.
+              */
+              syntheticsConfiguration.disableStepScreenshots();
+              syntheticsConfiguration.setConfig({
+                continueOnStepFailure: true,
+                includeRequestHeaders: true, // Enable if headers should be displayed in HAR
+                includeResponseHeaders: true, // Enable if headers should be displayed in HAR
+                restrictedHeaders: [], // Value of these headers will be redacted from logs and reports
+                restrictedUrlParameters: [] // Values of these url parameters will be redacted from logs and reports
+
+              });
 
               let page = await synthetics.getPage();
-              const response = await page.goto(url, {waitUntil: 'domcontentloaded', timeout: 30000});
-              
-              if (!response) {
-                  throw 'Failed to load page!';
-              }
-              
-              await synthetics.takeScreenshot('loaded', 'loaded');
-              let pageTitle = await page.title();
-              log.info('Page title: ' + pageTitle);
-              
-              if (response.status() !== 200) {
-                  throw 'Fail: ' + response.status();
+
+              for (const url of urls) {
+                  await loadUrl(page, url, takeScreenshot);
               }
           };
 
+          // Reset the page in-between
+          const resetPage = async function(page) {
+              try {
+                  await page.goto('about:blank',{waitUntil: ['load', 'networkidle0'], timeout: 30000} );
+              } catch (e) {
+                  synthetics.addExecutionError('Unable to open a blank page. ', e);
+              }
+          }
+
+          const loadUrl = async function (page, url, takeScreenshot) {
+              let stepName = null;
+              let domcontentloaded = false;
+
+              try {
+                  stepName = new URL(url).hostname;
+              } catch (e) {
+                  const errorString = `Error parsing url: ${url}. ${e}`;
+                  log.error(errorString);
+                  /* If we fail to parse the URL, don't emit a metric with a stepName based on it.
+                    It may not be a legal CloudWatch metric dimension name and we may not have an alarms
+                    setup on the malformed URL stepName.  Instead, fail this step which will
+                    show up in the logs and will fail the overall canary and alarm on the overall canary
+                    success rate.
+                  */
+                  throw e;
+              }
+
+              await synthetics.executeStep(stepName, async function () {
+                  const sanitizedUrl = syntheticsLogHelper.getSanitizedUrl(url);
+
+                  /* You can customize the wait condition here. For instance, using 'networkidle2' or 'networkidle0' to load page completely.
+                    networkidle0: Navigation is successful when the page has had no network requests for half a second. This might never happen if page is constantly loading multiple resources.
+                    networkidle2: Navigation is successful when the page has no more then 2 network requests for half a second.
+                    domcontentloaded: It's fired as soon as the page DOM has been loaded, without waiting for resources to finish loading. If needed add explicit wait with await new Promise(r => setTimeout(r, milliseconds))
+                  */
+                  const response = await page.goto(url, { waitUntil: ['domcontentloaded'], timeout: 30000});
+                  if (response) {
+                      domcontentloaded = true;
+                      const status = response.status();
+                      const statusText = response.statusText();
+
+                      logResponseString = `Response from url: ${sanitizedUrl}  Status: ${status}  Status Text: ${statusText}`;
+
+                      //If the response status code is not a 2xx success code
+                      if (response.status() < 200 || response.status() > 299) {
+                          throw new Error(`Failed to load url: ${sanitizedUrl} ${response.status()} ${response.statusText()}`);
+                      }
+                  } else {
+                      const logNoResponseString = `No response returned for url: ${sanitizedUrl}`;
+                      log.error(logNoResponseString);
+                      throw new Error(logNoResponseString);
+                  }
+              });
+
+              // Wait for 15 seconds to let page load fully before taking screenshot.
+              if (domcontentloaded && takeScreenshot) {
+                  await new Promise(r => setTimeout(r, 15000));
+                  await synthetics.takeScreenshot(stepName, 'loaded');
+              }
+              
+              // Reset page
+              await resetPage(page);
+          };
+
           exports.handler = async () => {
-              return await pageLoadBlueprint();
+              return await loadBlueprint();
           };
     DependsOn: CanaryArtifactsBucket
 
@@ -150,58 +227,177 @@ Resources:
       Code:
         Handler: index.handler
         Script: |
-          const synthetics = require('Synthetics');
+          var synthetics = require('Synthetics');
           const log = require('SyntheticsLogger');
 
           const apiCanaryBlueprint = async function () {
-            const postData = JSON.stringify({ test: 'data' });
-            const apiUrl = process.env.API_ENDPOINT;
+              
+              // Handle validation for positive scenario
+              const validatePositiveCase = async function(res) {
+                  return new Promise((resolve, reject) => {
+                      if (res.statusCode < 200 || res.statusCode > 299) {
+                          throw res.statusCode + ' ' + res.statusMessage;
+                      }
+               
+                      let responseBody = '';
+                      res.on('data', (d) => {
+                          responseBody += d;
+                      });
+               
+                      res.on('end', () => {
+                          try {
+                              let jsonBody = JSON.parse(responseBody);
+                              // Add specific checks for the response body here
+                              if (!jsonBody.hasOwnProperty('message')) {
+                                  throw new Error('Response does not contain a message property');
+                              }
+                              log.info('Response body: ' + JSON.stringify(jsonBody));
+                          } catch (error) {
+                              throw new Error('Failed to parse response body: ' + error.message);
+                          }
+                          resolve();
+                      });
+                  });
+              };
+              
+              // Handle validation for negative scenario
+              const validateNegativeCase = async function(res) {
+                  return new Promise((resolve, reject) => {
+                      if (res.statusCode !== 403) {
+                          throw new Error('Expected status code 403, but got ' + res.statusCode);
+                      }
+                      
+                      log.info('Received expected 403 Forbidden error');
+                      resolve();
+                  });
+              };
+              
+              let requestOptionsStep1 = {
+                  'hostname': new URL(process.env.API_ENDPOINT).hostname,
+                  'method': 'POST',
+                  'path': '/Prod/test',
+                  'port': 443,
+                  'protocol': 'https:',
+                  'headers': {
+                      'Content-Type': 'application/json',
+                      'User-Agent': synthetics.getCanaryUserAgentString()
+                  },
+                  'body': JSON.stringify({"test": "data"})
+              };
 
-            log.info(`API URL: ${apiUrl}`);
+              let stepConfig = {
+                  includeRequestHeaders: true, 
+                  includeResponseHeaders: true,
+                  restrictedHeaders: ['X-Amz-Security-Token', 'Authorization'],
+                  includeRequestBody: true,
+                  includeResponseBody: true
+              };
+                 
+              await synthetics.executeHttpStep('Verify POST /test API with valid request', requestOptionsStep1, validatePositiveCase, stepConfig);
+              
+              let requestOptionsStep2 = {
+                  'hostname': new URL(process.env.API_ENDPOINT).hostname,
+                  'method': 'GET',
+                  'path': '/Prod/test',
+                  'port': 443,
+                  'protocol': 'https:',
+                  'headers': {
+                      'User-Agent': synthetics.getCanaryUserAgentString()
+                  }
+              };
 
-            const requestOptions = {
-              hostname: new URL(apiUrl).hostname,
-              port: 443,
-              protocol: 'https:',
-              method: 'POST',
-              path: '/Prod/test',
-              headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(postData)
-              }
-            };
-
-            const stepConfig = {
-              includeRequestHeaders: true,
-              includeResponseHeaders: true,
-              includeRequestBody: true,
-              includeResponseBody: true
-            };
-
-            const validatePositiveCase = async function(res) {
-              return new Promise((resolve, reject) => {
-                if (res.statusCode < 200 || res.statusCode > 299) {
-                  throw `${res.statusCode} ${res.statusMessage}`;
-                }
-
-                let responseBody = '';
-                res.on('data', (d) => {
-                  responseBody += d;
-                });
-
-                res.on('end', () => {
-                  log.info(`Response body: ${responseBody}`);
-                  resolve();
-                });
-              });
-            };
-
-            await synthetics.executeHttpStep('API POST Test', requestOptions, validatePositiveCase, stepConfig, postData);
+              stepConfig = {
+                  includeRequestHeaders: true, 
+                  includeResponseHeaders: true,
+                  restrictedHeaders: ['X-Amz-Security-Token', 'Authorization'],
+                  includeRequestBody: true,
+                  includeResponseBody: true
+              };
+              
+              await synthetics.executeHttpStep('Verify GET /test API (expecting 403 Forbidden)', requestOptionsStep2, validateNegativeCase, stepConfig);
+              
           };
 
           exports.handler = async () => {
-            return await apiCanaryBlueprint();
+              return await apiCanaryBlueprint();
           };
+    DependsOn: SimpleAPI
+
+  PythonAPICanary:
+    Type: AWS::Synthetics::Canary
+    Properties:
+      Name: python-api-canary
+      ArtifactS3Location: !Join ['', ['s3://', !Ref CanaryArtifactsBucket, '/python-api-canary/']]
+      ExecutionRoleArn: !GetAtt CanaryRole.Arn
+      RuntimeVersion: syn-python-selenium-2.1
+      Schedule:
+        Expression: rate(1 minute)
+      StartCanaryAfterCreation: true
+      RunConfig:
+        TimeoutInSeconds: 60
+        EnvironmentVariables:
+          API_ENDPOINT: !Sub "https://${SimpleAPI}.execute-api.${AWS::Region}.amazonaws.com/Prod/test"
+      Code:
+        Handler: python_api_canary.handler
+        Script: |
+          import json
+          import http.client
+          from selenium.webdriver.common.by import By
+          import urllib.parse
+          from aws_synthetics.selenium import synthetics_webdriver as syn_webdriver
+          from aws_synthetics.common import synthetics_logger as logger
+
+
+          def verify_request(method, url, post_data=None, headers={}):
+              parsed_url = urllib.parse.urlparse(url)
+              user_agent = str(syn_webdriver.get_canary_user_agent_string())
+              if "User-Agent" in headers:
+                  headers["User-Agent"] = f"{user_agent} {headers['User-Agent']}"
+              else:
+                  headers["User-Agent"] = user_agent
+
+              logger.info(f"Making request with Method: '{method}' URL: {url}: Data: {json.dumps(post_data)} Headers: {json.dumps(headers)}")
+
+              if parsed_url.scheme == "https":
+                  conn = http.client.HTTPSConnection(parsed_url.hostname, parsed_url.port)
+              else:
+                  conn = http.client.HTTPConnection(parsed_url.hostname, parsed_url.port)
+
+              conn.request(method, url, post_data, headers)
+              response = conn.getresponse()
+              logger.info(f"Status Code: {response.status}")
+              logger.info(f"Response Headers: {json.dumps(response.headers.as_string())}")
+
+              if not response.status or response.status < 200 or response.status > 299:
+                  try:
+                      logger.error(f"Response: {response.read().decode()}")
+                  finally:
+                      if response.reason:
+                          conn.close()
+                          raise Exception(f"Failed: {response.reason}")
+                      else:
+                          conn.close()
+                          raise Exception(f"Failed with status code: {response.status}")
+
+              logger.info(f"Response: {response.read().decode()}")
+              logger.info("HTTP request successfully executed.")
+              conn.close()
+
+
+          def main():
+              url = os.environ['API_ENDPOINT']
+              method = 'POST'
+              postData = json.dumps({"test": "data"})
+              headers = {"Content-Type": "application/json"}
+
+              verify_request(method, url, postData, headers)
+
+              logger.info("Canary successfully executed.")
+
+
+          def handler(event, context):
+              logger.info("Selenium Python API canary.")
+              main()
     DependsOn: SimpleAPI
 
   CloudWatchDashboard:
@@ -210,64 +406,146 @@ Resources:
       DashboardName: MonitoringDashboard
       DashboardBody: !Sub |
         {
-            "widgets": [
-                {
-                    "height": 6,
-                    "width": 12,
-                    "y": 10,
-                    "x": 0,
-                    "type": "metric",
-                    "properties": {
-                        "view": "timeSeries",
-                        "stacked": false,
-                        "metrics": [
-                            [ "CloudWatchSynthetics", "SuccessPercent", "CanaryName", "api-canary" ],
-                            [ "...", "heartbeat-canary" ]
-                        ],
-                        "region": "${AWS::Region}",
-                        "title": "SuccessPercent"
-                    }
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 0,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "CloudWatchSynthetics", "4xx", { "label": "Errors count" } ]
+                ],
+                "legend": {
+                  "position": "bottom"
                 },
-                {
-                    "type": "metric",
-                    "x": 0,
-                    "y": 0,
-                    "width": 24,
-                    "height": 10,
-                    "properties": {
-                        "sparkline": false,
-                        "view": "table",
-                        "metrics": [
-                            [ "CloudWatchSynthetics", "2xx" ],
-                            [ ".", "4xx" ],
-                            [ ".", "5xx" ],
-                            [ ".", "Duration" ],
-                            [ ".", "Failed" ],
-                            [ ".", "Failed requests" ],
-                            [ ".", "SuccessPercent" ]
-                        ],
-                        "region": "${AWS::Region}"
-                    }
+                "view": "singleValue",
+                "title": "Errors (4xx)",
+                "stat": "Sum",
+                "sparkline": true,
+                "region": "${AWS::Region}",
+                "liveData": false,
+                "timezone": "UTC"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "CloudWatchSynthetics", "SuccessPercent", { "label": "Canary count" } ]
+                ],
+                "legend": {
+                  "position": "bottom"
                 },
-                {
-                    "type": "metric",
-                    "x": 12,
-                    "y": 10,
-                    "width": 12,
-                    "height": 6,
-                    "properties": {
-                        "view": "timeSeries",
-                        "stacked": true,
-                        "metrics": [
-                            [ "CloudWatchSynthetics", "SuccessPercent", "CanaryName", "api-canary", "StepName", "API POST Test" ],
-                            [ ".", "Duration", ".", ".", ".", "." ],
-                            [ ".", "SuccessPercent", ".", "heartbeat-canary", ".", "amazon.com" ],
-                            [ ".", "Duration", ".", ".", ".", "." ]
-                        ],
-                        "region": "${AWS::Region}"
-                    }
-                }
-            ]
+                "view": "singleValue",
+                "title": "Canaries",
+                "stat": "SampleCount",
+                "sparkline": true,
+                "region": "${AWS::Region}",
+                "liveData": false,
+                "timezone": "UTC"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 11,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "CloudWatchSynthetics", "Duration", { "label": "p50", "stat": "p50" } ],
+                  [ "...", { "label": "p90" } ],
+                  [ "...", { "stat": "p95", "label": "p95" } ]
+                ],
+                "legend": {
+                  "position": "bottom"
+                },
+                "title": "Duration",
+                "stat": "p90",
+                "region": "${AWS::Region}",
+                "liveData": false,
+                "timezone": "UTC",
+                "view": "timeSeries",
+                "stacked": false
+              }
+            },
+            {
+              "type": "metric",
+              "x": 6,
+              "y": 0,
+              "width": 5,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "CloudWatchSynthetics", "SuccessPercent", { "label": "Success percentage" } ]
+                ],
+                "legend": {
+                  "position": "bottom"
+                },
+                "view": "singleValue",
+                "title": "SuccessPercent",
+                "sparkline": true,
+                "region": "${AWS::Region}",
+                "liveData": false,
+                "timezone": "UTC"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 11,
+              "y": 6,
+              "width": 13,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "CloudWatchSynthetics", "SuccessPercent", { "label": "Passed (%)" } ],
+                  [ "CloudWatchSynthetics", "Failed", { "color": "#d62728", "stat": "SampleCount", "yAxis": "right", "label": "Failed (count)" } ]
+                ],
+                "legend": {
+                  "position": "bottom"
+                },
+                "title": "Canary run",
+                "yAxis": {
+                  "left": {
+                    "max": 100,
+                    "min": 0
+                  }
+                },
+                "region": "${AWS::Region}",
+                "liveData": false,
+                "timezone": "UTC",
+                "view": "timeSeries",
+                "stacked": false
+              }
+            },
+            {
+              "type": "metric",
+              "x": 11,
+              "y": 0,
+              "width": 5,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "CloudWatchSynthetics", "Failed", { "label": "Failed count", "stat": "Sum" } ]
+                ],
+                "legend": {
+                  "position": "bottom"
+                },
+                "view": "singleValue",
+                "title": "Failed",
+                "sparkline": true,
+                "region": "${AWS::Region}",
+                "liveData": false,
+                "timezone": "UTC"
+              }
+            }
+          ]
         }
 
 Outputs:
@@ -277,6 +555,9 @@ Outputs:
   APICanaryName:
     Description: Name of the API Canary
     Value: !Ref APICanary
+  PythonAPICanaryName:
+    Description: Name of the Python API Canary
+    Value: !Ref PythonAPICanary
   DashboardName:
     Description: Name of the CloudWatch Dashboard
     Value: !Ref CloudWatchDashboard
