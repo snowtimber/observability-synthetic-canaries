@@ -159,7 +159,8 @@ Resources:
 
               log.info(`Base API URL: ${apiUrl}`);
 
-              const url = new URL('/test', apiUrl);
+              const url = new URL(apiUrl);
+              url.pathname = url.pathname + '/test';
               log.info(`Full API URL: ${url.toString()}`);
 
               const requestOptions = {
@@ -293,7 +294,4 @@ Outputs:
   SampleCurlCommand:
     Description: Sample curl command to invoke the API endpoint
     Value: !Sub |
-      curl -X POST \
-        -H "Content-Type: application/json" \
-        -d '{"test": "data"}' \
-        https://${SimpleAPI}.execute-api.${AWS::Region}.amazonaws.com/Prod/test
+      curl -X POST -H "Content-Type: application/json" -d '{"test": "data"}' ${APIEndpoint}/test
