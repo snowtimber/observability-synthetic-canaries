@@ -6,12 +6,14 @@ This project uses AWS Serverless Application Model (SAM) to deploy CloudWatch Sy
 
 This project deploys the following AWS resources:
 
-1. Two CloudWatch Synthetic Canaries:
-   - A Heartbeat Canary that checks the availability of amazon.com
-   - An API Canary that performs GET requests to multiple S3 endpoints
+1. Three CloudWatch Synthetic Canaries:
+   - A Heartbeat Canary that checks the availability of amazon.com and google.com
+   - An API Canary that performs POST requests to an API Gateway endpoint
+   - A Python API Canary that performs POST requests to the same API Gateway endpoint
 2. An S3 bucket to store canary artifacts
 3. IAM roles and policies for the canaries
 4. A CloudWatch Dashboard to visualize canary metrics
+5. A simple API Gateway with a mock integration
 
 ## Prerequisites
 
@@ -19,6 +21,7 @@ This project deploys the following AWS resources:
 - AWS CLI
 - AWS SAM CLI
 - Node.js 12.x or later
+- Python 3.x
 
 ## Setup and Deployment
 
@@ -130,32 +133,40 @@ If you prefer to deploy the stack directly through the AWS Console, follow these
 
 #### Heartbeat Canary
 
-- Checks the availability of https://amazon.com
+- Checks the availability of https://amazon.com and https://google.com
 - Takes a screenshot after successful load
 - Reports on availability and latency
 
 #### API Canary
 
-- Performs HEAD requests to the following open data S3 endpoints:
-  - `https://sentinel-s2-l1c.s3.eu-central-1.amazonaws.com`
-  - `https://sentinel-inventory.s3.eu-central-1.amazonaws.com/sentinel-s2-l1c`
+- Performs POST requests to the API Gateway endpoint
 - Validates successful responses (status code between 200-299)
-- Reports on availability and latency of each endpoint
+- Also tests a negative scenario (expecting a 403 Forbidden error)
+- Reports on availability and latency of the API
 
-The API Canary checks the availability of an open data set hosted on S3 buckets in the `eu-central-1` region. The data set contains Level 1C scenes and metadata for the Sentinel-2 satellite mission.
+#### Python API Canary
+
+- Performs POST requests to the API Gateway endpoint using Python and Selenium
+- Validates successful responses
+- Reports on availability and latency of the API
+
+### Simple API Gateway
+
+- Provides a mock integration for testing purposes
+- Responds to POST requests on the /test endpoint
 
 ### CloudWatch Dashboard
 
-The dashboard provides visual metrics for both canaries, including:
-- Heartbeat Latency
-- Heartbeat Availability
-- API Latency
-- API Availability
+The dashboard provides visual metrics for all canaries, including:
+- Canary Success Percentage
+- Canary Duration (p50, p90, p95)
+- Error Count (4xx errors)
+- Failed Canary Runs
 
 ## Customization
 
-- Modify the `S3_ENDPOINTS` environment variable in the `template.yaml` file to monitor different S3 endpoints
-- Adjust the canary scripts in the `template.yaml` file to change monitoring behavior
+- Modify the canary scripts in the `template.yaml` file to change monitoring behavior
+- Adjust the API Gateway configuration to test different endpoints or methods
 - Modify the CloudWatch Dashboard layout or metrics in the `template.yaml` file
 
 ## Post-Deployment Steps
@@ -166,9 +177,11 @@ The dashboard provides visual metrics for both canaries, including:
 2. Check the CloudWatch Dashboard for canary metrics:
    https://[YOUR-REGION].console.aws.amazon.com/cloudwatch/home?region=[YOUR-REGION]#dashboards:
 
-3. To make changes, edit the template.yaml file and re-run the deployment process.
+3. Test the API Gateway endpoint using the provided sample curl command in the CloudFormation outputs.
 
-4. To delete the stack, run:
+4. To make changes, edit the template.yaml file and re-run the deployment process.
+
+5. To delete the stack, run:
    ```
    aws cloudformation delete-stack --stack-name [YOUR-STACK-NAME] --region [YOUR-REGION]
    ```
